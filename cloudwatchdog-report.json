@@ -1,5 +1,20 @@
 {
-  "scan_time": "2026-06-25T13:41:55.852513+00:00",
+  "scan_time": "2026-06-25T14:11:30.177813+00:00",
   "region": "us-east-1",
-  "findings": []
+  "findings": [
+    {
+      "resource": "iam::account",
+      "check": "iam_password_policy_missing",
+      "severity": "MEDIUM",
+      "detail": "No IAM account password policy configured.",
+      "remediation": "Set a password policy: min length 14, reuse prevention 24, and character complexity requirements."
+    },
+    {
+      "resource": "vpc:vpc-04ef9c7e (unnamed)",
+      "check": "vpc_flow_logs_disabled",
+      "severity": "MEDIUM",
+      "detail": "VPC vpc-04ef9c7e has no active flow logs.",
+      "remediation": "Enable VPC Flow Logs to CloudWatch Logs or S3 for all VPCs."
+    }
+  ]
 }
