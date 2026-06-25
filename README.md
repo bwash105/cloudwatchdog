@@ -5,6 +5,8 @@ Open-source CSPM tool built as a PM portfolio artifact. Scans AWS environments f
 **Built by:** Brian L. E. Washington  
 **Why:** Demonstrate CSPM product thinking — from detection schema design to severity prioritization to remediation UX.
 
+→ **[Product design doc (DESIGN.md)](DESIGN.md)** — why these checks, how severity works, what's next.
+
 ## What It Detects
 
 | Check | Severity | CIS Benchmark |
@@ -43,6 +45,44 @@ Outputs:
 - Terminal report (color-coded by severity, with remediation)
 - `cloudwatchdog-report.json` for downstream integration
 - `cloudwatchdog-report.html` dashboard (use `--html custom.html` for a custom path)
+
+## Sample Output
+
+Terminal scan (11 checks, findings sorted by severity):
+
+```
+🔍 CloudWatchdog — AWS Security Posture Scan
+   Region: us-east-1 | Profile: default
+
+   Running: check_public_s3_buckets... ✅ clean
+   Running: check_s3_encryption... ✅ clean
+   Running: check_root_access_key... ✅ clean
+   Running: check_unused_access_keys... ✅ clean
+   Running: check_iam_password_policy... ⚠️  1 findings
+   Running: check_open_ssh_rdp... ✅ clean
+   Running: check_mfa_root... ✅ clean
+   Running: check_public_rds... ✅ clean
+   Running: check_unencrypted_ebs... ✅ clean
+   Running: check_vpc_flow_logs... ⚠️  1 findings
+   Running: check_cloudtrail_disabled... ✅ clean
+
+Findings: 2 total
+  🟡 MEDIUM: 2
+
+1. 🟡 [MEDIUM] iam_password_policy_missing
+   Resource:     iam::account
+   Detail:       No IAM account password policy configured.
+   Remediation:  Set a password policy: min length 14, reuse prevention 24...
+
+2. 🟡 [MEDIUM] vpc_flow_logs_disabled
+   Resource:     vpc:vpc-04ef9c7e (unnamed)
+   Detail:       VPC vpc-04ef9c7e has no active flow logs.
+   Remediation:  Enable VPC Flow Logs to CloudWatch Logs or S3 for all VPCs.
+```
+
+HTML dashboard (opens in browser after each scan):
+
+![CloudWatchdog security posture report](docs/report-screenshot.png)
 
 ## Product Design Notes
 
