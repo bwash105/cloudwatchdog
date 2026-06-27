@@ -1,0 +1,4 @@
+boto3>=1.34
+anthropic>=0.28
+pytest>=8.0
+moto[all]>=5.0
