@@ -304,3 +304,28 @@ def test_check_s3_access_logging_finds_unlogged_bucket():
     assert findings[0]["severity"] == "MEDIUM"
     assert findings[0]["check"] == "s3_access_logging_disabled"
     assert findings[0]["resource"] == "s3://silent-bucket"
+
+
+# ── Integration: full pipeline ──────────────────────────────────────────────────
+
+from compliance import compute_compliance
+
+
+@mock_aws
+def test_full_pipeline_produces_valid_compliance_scores():
+    """run_all_checks → compute_compliance → valid score structure."""
+    session = boto3.Session(region_name="us-east-1")
+    check_results = run_all_checks(session, verbose=False)
+    scores = compute_compliance(check_results)
+
+    assert "cis_aws_v2" in scores
+    assert "nist_csf_coverage" in scores
+    cis = scores["cis_aws_v2"]
+    assert 0 <= cis["score_pct"] <= 100
+    assert cis["total"] == 19
+
+    nist = scores["nist_csf_coverage"]
+    for fn in ["identify", "protect", "detect"]:
+        assert isinstance(nist[fn], dict)
+        assert "passing" in nist[fn]
+        assert "total" in nist[fn]
