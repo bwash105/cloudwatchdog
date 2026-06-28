@@ -1,5 +1,6 @@
 import boto3
 from moto import mock_aws
+from unittest.mock import patch
 from checks import run_all_checks, SEVERITY
 
 
@@ -44,24 +45,20 @@ def test_check_iam_admin_policy_users_clean():
     assert findings == []
 
 
-@mock_aws
 def test_check_iam_admin_policy_users_finds_direct_admin():
-    iam = boto3.client("iam", region_name="us-east-1")
-    iam.create_user(UserName="baduser")
-    # moto does not ship AWS managed policies; create one under the account namespace
-    resp = iam.create_policy(
-        PolicyName="AdministratorAccess",
-        PolicyDocument=json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}],
-        }),
-    )
-    iam.attach_user_policy(
-        UserName="baduser",
-        PolicyArn=resp["Policy"]["Arn"],
-    )
-    session = boto3.Session(region_name="us-east-1")
-    findings = check_iam_admin_policy_users(session)
+    # Patch the IAM client so list_attached_user_policies returns the exact
+    # AWS-managed ARN. moto assigns a local account ARN on create_policy, which
+    # would not match the exact-match check.
+    from unittest.mock import MagicMock
+    aws_admin_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+    mock_iam = MagicMock()
+    mock_iam.list_users.return_value = {"Users": [{"UserName": "baduser"}]}
+    mock_iam.list_attached_user_policies.return_value = {
+        "AttachedPolicies": [{"PolicyName": "AdministratorAccess", "PolicyArn": aws_admin_arn}]
+    }
+    mock_session = MagicMock()
+    mock_session.client.return_value = mock_iam
+    findings = check_iam_admin_policy_users(mock_session)
     assert len(findings) == 1
     assert findings[0]["severity"] == "HIGH"
     assert findings[0]["check"] == "iam_admin_policy_on_user"
@@ -123,6 +120,20 @@ def test_check_sg_all_traffic_open_finds_wildcard_protocol():
     assert len(findings) >= 1
     assert findings[0]["severity"] == "CRITICAL"
     assert findings[0]["check"] == "sg_all_traffic_open"
+
+
+@mock_aws
+def test_check_sg_all_traffic_open_finds_ipv6_wildcard():
+    ec2 = boto3.client("ec2", region_name="us-east-1")
+    sg = ec2.create_security_group(GroupName="ipv6-open-sg", Description="ipv6 open")
+    sg_id = sg["GroupId"]
+    ec2.authorize_security_group_ingress(
+        GroupId=sg_id,
+        IpPermissions=[{"IpProtocol": "-1", "Ipv6Ranges": [{"CidrIpv6": "::/0"}]}],
+    )
+    session = boto3.Session(region_name="us-east-1")
+    findings = check_sg_all_traffic_open(session)
+    assert any(f["check"] == "sg_all_traffic_open" and sg_id in f["resource"] for f in findings)
 
 
 # ── Network: public EC2 in public subnet ─────────────────────────────────────

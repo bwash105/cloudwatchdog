@@ -319,7 +319,7 @@ def check_iam_admin_policy_users(session):
             username = user["UserName"]
             policies = iam.list_attached_user_policies(UserName=username).get("AttachedPolicies", [])
             for policy in policies:
-                if policy["PolicyArn"].endswith(":policy/AdministratorAccess") or policy["PolicyArn"] == "arn:aws:iam::aws:policy/AdministratorAccess":
+                if policy["PolicyArn"] == "arn:aws:iam::aws:policy/AdministratorAccess":
                     findings.append({
                         "resource": f"iam::{username}",
                         "check": "iam_admin_policy_on_user",
@@ -366,12 +366,21 @@ def check_sg_all_traffic_open(session):
             for perm in sg.get("IpPermissions", []):
                 if perm.get("IpProtocol") == "-1":
                     for ip_range in perm.get("IpRanges", []):
-                        if ip_range.get("CidrIp") in ("0.0.0.0/0", "::/0"):
+                        if ip_range.get("CidrIp") == "0.0.0.0/0":
                             findings.append({
                                 "resource": f"sg:{sg_id} ({sg_name})",
                                 "check": "sg_all_traffic_open",
                                 "severity": "CRITICAL",
                                 "detail": f"Security group {sg_id} allows ALL traffic (protocol -1) from {ip_range['CidrIp']}.",
+                                "remediation": "Remove the all-traffic ingress rule. Define specific port/protocol rules for required access.",
+                            })
+                    for ip_range in perm.get("Ipv6Ranges", []):
+                        if ip_range.get("CidrIpv6") == "::/0":
+                            findings.append({
+                                "resource": f"sg:{sg_id} ({sg_name})",
+                                "check": "sg_all_traffic_open",
+                                "severity": "CRITICAL",
+                                "detail": f"Security group {sg_id} allows ALL traffic (protocol -1) from ::/0 (IPv6).",
                                 "remediation": "Remove the all-traffic ingress rule. Define specific port/protocol rules for required access.",
                             })
     except Exception:
