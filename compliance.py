@@ -12,6 +12,7 @@ NIST_MAPPING: dict[str, list[str]] = {
         "check_root_access_key",
         "check_mfa_root",
         "check_iam_password_policy",
+        "check_iam_user_mfa",
         "check_unused_access_keys",
         "check_unencrypted_ebs",
         "check_s3_encryption",

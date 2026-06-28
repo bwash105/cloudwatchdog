@@ -9,7 +9,7 @@ def test_run_all_checks_returns_correct_structure():
     session = boto3.Session(region_name="us-east-1")
     results = run_all_checks(session, verbose=False)
     assert isinstance(results, list)
-    assert len(results) == 19
+    assert len(results) == 20
     for name, findings in results:
         assert isinstance(name, str)
         assert name.startswith("check_")
@@ -322,10 +322,39 @@ def test_full_pipeline_produces_valid_compliance_scores():
     assert "nist_csf_coverage" in scores
     cis = scores["cis_aws_v2"]
     assert 0 <= cis["score_pct"] <= 100
-    assert cis["total"] == 19
+    assert cis["total"] == 20
 
     nist = scores["nist_csf_coverage"]
     for fn in ["identify", "protect", "detect"]:
         assert isinstance(nist[fn], dict)
         assert "passing" in nist[fn]
         assert "total" in nist[fn]
+
+
+@mock_aws
+def test_check_open_ssh_rdp_finds_ipv6_ssh():
+    from checks import check_open_ssh_rdp
+    ec2 = boto3.client("ec2", region_name="us-east-1")
+    sg = ec2.create_security_group(GroupName="ipv6-ssh-sg", Description="ipv6 ssh")
+    sg_id = sg["GroupId"]
+    ec2.authorize_security_group_ingress(
+        GroupId=sg_id,
+        IpPermissions=[{
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "Ipv6Ranges": [{"CidrIpv6": "::/0"}],
+        }],
+    )
+    session = boto3.Session(region_name="us-east-1")
+    findings = check_open_ssh_rdp(session)
+    assert any(f["check"] == "open_ssh_rdp_to_world" and sg_id in f["resource"] for f in findings)
+
+
+@mock_aws
+def test_check_iam_user_mfa_clean():
+    session = boto3.Session(region_name="us-east-1")
+    from checks import check_iam_user_mfa
+    # No users = no findings
+    findings = check_iam_user_mfa(session)
+    assert findings == []

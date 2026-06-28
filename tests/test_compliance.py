@@ -15,8 +15,8 @@ def test_all_passing_gives_100_percent():
     results = [(fn.__name__, []) for fn in ALL_CHECK_FUNCTIONS]
     scores = compute_compliance(results)
     assert scores["cis_aws_v2"]["score_pct"] == 100
-    assert scores["cis_aws_v2"]["passing"] == 19
-    assert scores["cis_aws_v2"]["total"] == 19
+    assert scores["cis_aws_v2"]["passing"] == 20
+    assert scores["cis_aws_v2"]["total"] == 20
 
 
 def test_all_failing_gives_0_percent():
@@ -31,13 +31,13 @@ def test_all_failing_gives_0_percent():
 def test_partial_compliance_score():
     from checks import ALL_CHECK_FUNCTIONS
     dummy_finding = [{"resource": "r", "check": "c", "severity": "HIGH", "detail": "d", "remediation": "r"}]
-    # First 10 pass, last 9 fail
+    # First 10 pass, last 10 fail
     results = [(fn.__name__, []) for fn in ALL_CHECK_FUNCTIONS[:10]]
     results += [(fn.__name__, dummy_finding) for fn in ALL_CHECK_FUNCTIONS[10:]]
     scores = compute_compliance(results)
     assert scores["cis_aws_v2"]["passing"] == 10
-    assert scores["cis_aws_v2"]["total"] == 19
-    assert scores["cis_aws_v2"]["score_pct"] == round(10 / 19 * 100)
+    assert scores["cis_aws_v2"]["total"] == 20
+    assert scores["cis_aws_v2"]["score_pct"] == round(10 / 20 * 100)
 
 
 def test_nist_identify_counts_correct_checks():
@@ -54,7 +54,7 @@ def test_nist_protect_counts_correct_checks():
     results = [(fn.__name__, []) for fn in ALL_CHECK_FUNCTIONS]
     scores = compute_compliance(results)
     protect = scores["nist_csf_coverage"]["protect"]
-    assert protect["total"] == 11
+    assert protect["total"] == 12
 
 
 def test_nist_detect_counts_correct_checks():

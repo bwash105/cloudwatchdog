@@ -20,10 +20,22 @@ def get_credential_report(session):
     global _credential_report_cache
     if _credential_report_cache is not None:
         return _credential_report_cache
+
     iam = session.client("iam")
     iam.generate_credential_report()
-    time.sleep(2)
-    result = iam.get_credential_report()
+
+    for _ in range(10):
+        try:
+            result = iam.get_credential_report()
+            if result.get("State") == "COMPLETE" or "Content" in result:
+                break
+        except ClientError as e:
+            if e.response["Error"]["Code"] not in ("ReportInProgress", "ReportNotPresent"):
+                raise
+        time.sleep(1)
+    else:
+        raise RuntimeError("IAM credential report did not complete after 10 seconds")
+
     content = result["Content"].decode("utf-8").splitlines()
     headers = content[0].split(",")
     _credential_report_cache = [dict(zip(headers, row.split(","))) for row in content[1:]]
@@ -95,7 +107,7 @@ def check_open_ssh_rdp(session):
             to_port = perm.get("ToPort", 65535)
             for ip_range in perm.get("IpRanges", []):
                 cidr = ip_range.get("CidrIp", "")
-                if cidr in ("0.0.0.0/0", "::/0"):
+                if cidr == "0.0.0.0/0":
                     for port, label in [(22, "SSH"), (3389, "RDP")]:
                         if from_port <= port <= to_port:
                             findings.append({
@@ -103,6 +115,18 @@ def check_open_ssh_rdp(session):
                                 "check": "open_ssh_rdp_to_world",
                                 "severity": "HIGH",
                                 "detail": f"Port {port} ({label}) open to {cidr}",
+                                "remediation": f"Restrict port {port} to known IPs or VPN CIDR range.",
+                            })
+            for ip_range in perm.get("Ipv6Ranges", []):
+                cidr = ip_range.get("CidrIpv6", "")
+                if cidr == "::/0":
+                    for port, label in [(22, "SSH"), (3389, "RDP")]:
+                        if from_port <= port <= to_port:
+                            findings.append({
+                                "resource": f"sg:{sg_id} ({sg_name})",
+                                "check": "open_ssh_rdp_to_world",
+                                "severity": "HIGH",
+                                "detail": f"Port {port} ({label}) open to {cidr} (IPv6)",
                                 "remediation": f"Restrict port {port} to known IPs or VPN CIDR range.",
                             })
     return findings
@@ -199,6 +223,15 @@ def check_iam_password_policy(session):
             "remediation": "Update IAM password policy to meet CIS 1.8–1.9 (length 14+, reuse 24, full complexity).",
         })
 
+    return findings
+
+
+def check_iam_user_mfa(session):
+    """
+    IAM USERS WITH CONSOLE PASSWORD BUT NO MFA — HIGH
+    CIS 1.10: Console users without MFA are one phished password from account compromise.
+    """
+    findings = []
     try:
         for fields in get_credential_report(session):
             user = fields.get("user", "")
@@ -536,6 +569,7 @@ ALL_CHECK_FUNCTIONS = [
     check_root_access_key,
     check_unused_access_keys,
     check_iam_password_policy,
+    check_iam_user_mfa,
     check_open_ssh_rdp,
     check_mfa_root,
     check_public_rds,
@@ -554,7 +588,7 @@ ALL_CHECK_FUNCTIONS = [
 
 
 def run_all_checks(session: boto3.Session, verbose: bool = True) -> list[tuple[str, list[dict]]]:
-    """Run all 19 checks. Returns list of (function_name, findings) tuples."""
+    """Run all 20 checks. Returns list of (function_name, findings) tuples."""
     global _credential_report_cache
     _credential_report_cache = None
 
