@@ -310,37 +310,215 @@ def check_s3_encryption(session):
     return findings
 
 
-# New checks added in Task 2 — stubs here so run_all_checks has correct count
 def check_iam_admin_policy_users(session):
-    return []  # replaced in Task 2
+    findings = []
+    iam = session.client("iam")
+    try:
+        users = iam.list_users().get("Users", [])
+        for user in users:
+            username = user["UserName"]
+            policies = iam.list_attached_user_policies(UserName=username).get("AttachedPolicies", [])
+            for policy in policies:
+                if policy["PolicyArn"].endswith(":policy/AdministratorAccess") or policy["PolicyArn"] == "arn:aws:iam::aws:policy/AdministratorAccess":
+                    findings.append({
+                        "resource": f"iam::{username}",
+                        "check": "iam_admin_policy_on_user",
+                        "severity": "HIGH",
+                        "detail": f"User {username} has AdministratorAccess policy attached directly.",
+                        "remediation": "Remove direct policy. Add user to an admin group or grant access via role assumption.",
+                    })
+    except Exception:
+        pass
+    return findings
 
 
 def check_iam_wildcard_trust(session):
-    return []  # replaced in Task 2
+    findings = []
+    iam = session.client("iam")
+    try:
+        paginator = iam.get_paginator("list_roles")
+        for page in paginator.paginate():
+            for role in page.get("Roles", []):
+                trust_doc = role.get("AssumeRolePolicyDocument", {})
+                for stmt in trust_doc.get("Statement", []):
+                    principal = stmt.get("Principal")
+                    if principal == "*":
+                        findings.append({
+                            "resource": f"iam::role:{role['RoleName']}",
+                            "check": "iam_wildcard_trust_policy",
+                            "severity": "CRITICAL",
+                            "detail": f"Role {role['RoleName']} trust policy uses Principal: '*' — assumable by anyone.",
+                            "remediation": "Restrict Principal to specific AWS accounts, services, or ARNs. Add Condition constraints if cross-account access is required.",
+                        })
+    except Exception:
+        pass
+    return findings
 
 
 def check_sg_all_traffic_open(session):
-    return []  # replaced in Task 2
+    findings = []
+    ec2 = session.client("ec2")
+    try:
+        sgs = ec2.describe_security_groups().get("SecurityGroups", [])
+        for sg in sgs:
+            sg_id = sg["GroupId"]
+            sg_name = sg.get("GroupName", "unnamed")
+            for perm in sg.get("IpPermissions", []):
+                if perm.get("IpProtocol") == "-1":
+                    for ip_range in perm.get("IpRanges", []):
+                        if ip_range.get("CidrIp") in ("0.0.0.0/0", "::/0"):
+                            findings.append({
+                                "resource": f"sg:{sg_id} ({sg_name})",
+                                "check": "sg_all_traffic_open",
+                                "severity": "CRITICAL",
+                                "detail": f"Security group {sg_id} allows ALL traffic (protocol -1) from {ip_range['CidrIp']}.",
+                                "remediation": "Remove the all-traffic ingress rule. Define specific port/protocol rules for required access.",
+                            })
+    except Exception:
+        pass
+    return findings
 
 
 def check_public_ec2_in_public_subnet(session):
-    return []  # replaced in Task 2
+    findings = []
+    ec2 = session.client("ec2")
+    try:
+        # Identify public subnets: subnets associated with a route table
+        # that has a route 0.0.0.0/0 → igw-*
+        route_tables = ec2.describe_route_tables().get("RouteTables", [])
+        public_subnet_ids: set[str] = set()
+        for rt in route_tables:
+            has_igw_route = any(
+                route.get("GatewayId", "").startswith("igw-")
+                and route.get("DestinationCidrBlock") == "0.0.0.0/0"
+                for route in rt.get("Routes", [])
+            )
+            if has_igw_route:
+                for assoc in rt.get("Associations", []):
+                    if "SubnetId" in assoc:
+                        public_subnet_ids.add(assoc["SubnetId"])
+
+        reservations = ec2.describe_instances().get("Reservations", [])
+        for reservation in reservations:
+            for instance in reservation.get("Instances", []):
+                if instance.get("State", {}).get("Name") not in ("running", "stopped"):
+                    continue
+                subnet_id = instance.get("SubnetId", "")
+                public_ip = instance.get("PublicIpAddress")
+                if subnet_id in public_subnet_ids and public_ip:
+                    instance_id = instance["InstanceId"]
+                    findings.append({
+                        "resource": f"ec2:{instance_id} (public IP: {public_ip})",
+                        "check": "public_ec2_in_public_subnet",
+                        "severity": "MEDIUM",
+                        "detail": f"Instance {instance_id} in public subnet {subnet_id} has a public IP assigned.",
+                        "remediation": "Use a NAT gateway for outbound access. Remove public IP assignment. Place internet-facing services behind an ALB.",
+                    })
+    except Exception:
+        pass
+    return findings
 
 
 def check_cloudtrail_log_validation(session):
-    return []  # replaced in Task 2
+    findings = []
+    ct = session.client("cloudtrail")
+    try:
+        trails = ct.describe_trails().get("trailList", [])
+        for trail in trails:
+            if not trail.get("LogFileValidationEnabled", False):
+                findings.append({
+                    "resource": f"cloudtrail:{trail.get('Name', 'unnamed')}",
+                    "check": "cloudtrail_log_validation_disabled",
+                    "severity": "HIGH",
+                    "detail": f"Trail {trail.get('Name')} has log file validation disabled — logs can be tampered with undetected.",
+                    "remediation": "Enable log file validation: aws cloudtrail update-trail --name <name> --enable-log-file-validation",
+                })
+    except Exception:
+        pass
+    return findings
 
 
 def check_guardduty_enabled(session):
-    return []  # replaced in Task 2
+    findings = []
+    gd = session.client("guardduty")
+    try:
+        detector_ids = gd.list_detectors().get("DetectorIds", [])
+        if not detector_ids:
+            findings.append({
+                "resource": "guardduty::account",
+                "check": "guardduty_not_enabled",
+                "severity": "HIGH",
+                "detail": "GuardDuty is not enabled. No threat detection layer for API calls, DNS, or network traffic.",
+                "remediation": "Enable GuardDuty: aws guardduty create-detector --enable. Enable in all active regions.",
+            })
+        else:
+            for detector_id in detector_ids:
+                detector = gd.get_detector(DetectorId=detector_id)
+                if detector.get("Status") != "ENABLED":
+                    findings.append({
+                        "resource": f"guardduty::detector:{detector_id}",
+                        "check": "guardduty_not_enabled",
+                        "severity": "HIGH",
+                        "detail": f"GuardDuty detector {detector_id} exists but is not enabled.",
+                        "remediation": f"Enable the detector: aws guardduty update-detector --detector-id {detector_id} --enable",
+                    })
+    except Exception:
+        pass
+    return findings
 
 
 def check_config_enabled(session):
-    return []  # replaced in Task 2
+    findings = []
+    cfg = session.client("config")
+    try:
+        recorders = cfg.describe_configuration_recorders().get("ConfigurationRecorders", [])
+        if not recorders:
+            findings.append({
+                "resource": "config::account",
+                "check": "config_not_enabled",
+                "severity": "MEDIUM",
+                "detail": "AWS Config is not configured. No resource change history for compliance audits or forensics.",
+                "remediation": "Enable AWS Config with a delivery channel to S3. aws configservice put-configuration-recorder and put-delivery-channel.",
+            })
+            return findings
+
+        status_list = cfg.describe_configuration_recorder_status().get("ConfigurationRecordersStatus", [])
+        for status in status_list:
+            if not status.get("recording", False):
+                findings.append({
+                    "resource": f"config::recorder:{status.get('name', 'default')}",
+                    "check": "config_not_enabled",
+                    "severity": "MEDIUM",
+                    "detail": f"AWS Config recorder {status.get('name')} exists but is not recording.",
+                    "remediation": "Start the recorder: aws configservice start-configuration-recorder --configuration-recorder-name default",
+                })
+    except Exception:
+        pass
+    return findings
 
 
 def check_s3_access_logging(session):
-    return []  # replaced in Task 2
+    findings = []
+    s3 = session.client("s3")
+    try:
+        buckets = s3.list_buckets().get("Buckets", [])
+        for bucket in buckets:
+            name = bucket["Name"]
+            try:
+                logging_config = s3.get_bucket_logging(Bucket=name)
+                if "LoggingEnabled" not in logging_config:
+                    findings.append({
+                        "resource": f"s3://{name}",
+                        "check": "s3_access_logging_disabled",
+                        "severity": "MEDIUM",
+                        "detail": f"Bucket {name} has no server access logging. Read/write operations are not audited.",
+                        "remediation": "Enable server access logging: aws s3api put-bucket-logging. Send logs to a dedicated audit bucket.",
+                    })
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return findings
 
 
 ALL_CHECK_FUNCTIONS = [
