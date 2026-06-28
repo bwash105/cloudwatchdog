@@ -86,3 +86,48 @@ Every finding includes a **remediation string**. This is intentional: the #1 CSP
 - `README.md` — user-facing docs and quick start
 
 The code proves feasibility. The design doc proves product thinking.
+
+---
+
+## New Checks — Why These 8 (v2)
+
+| Tier | Check | Security+ Domain | Rationale |
+|------|-------|-----------------|-----------|
+| **Ship now** | IAM admin policy on users | A — Identity | Violates least privilege. Direct policy attachment creates ungovernable blast radius. Removing it costs zero operational impact; not removing it costs the ability to govern access at scale. |
+| **Ship now** | IAM wildcard trust policy | A — Identity | `Principal: *` = any entity in the world can assume the role. No credentials required if there are no condition constraints. CRITICAL because it's the kind of misconfiguration that gets created by a confused dev and never reviewed. |
+| **Ship now** | All-traffic security group | B — Network | Protocol `-1` + `0.0.0.0/0` is worse than open SSH/RDP — it exposes every port. Wiz's 2024 State of Cloud Security report lists this as the #1 finding in enterprise scans. |
+| **Ship now** | Public EC2 in public subnet | B — Network | Not CRITICAL alone, but creates the attack surface that other findings exploit. Public IP + open SG = full exposure. Flagging at MEDIUM enables a compound-risk narrative. |
+| **Ship now** | CloudTrail log validation | C — IR/Forensics | Enabled ≠ trustworthy. Without log file validation, an attacker can delete/modify trail logs post-breach. The difference between "we have evidence" and "we have nothing." |
+| **Ship now** | GuardDuty not enabled | C — IR/Forensics | Real-time threat detection layer. If CloudTrail is the audit log, GuardDuty is the alarm. Neither replaces the other. $0 setup cost with significant IR value. |
+| **Ship now** | AWS Config not enabled | D — Compliance/Risk | Without Config, you cannot answer "what was the state of this resource at the time of the breach?" Required for SOC 2, PCI, and any compliance audit. |
+| **Ship now** | S3 access logging disabled | D — Compliance/Risk | CloudTrail captures control-plane API calls. S3 access logging captures data-plane GET/PUT/DELETE. Both are needed for full data exfiltration forensics. |
+
+---
+
+## LLM Remediation Playbooks
+
+**Why opt-in:** CSPM tools don't know what a user's specific account looks like. The most useful remediation advice is environment-specific. Opt-in via `--llm` + `ANTHROPIC_API_KEY` keeps costs at zero for users who don't need it.
+
+**Why Haiku, not Sonnet:** Remediation steps are structured and formulaic. Haiku's output quality is indistinguishable from Sonnet for this task at ~10x lower cost. If a future version adds complex IAM privilege escalation chain analysis, that specific step can promote to Sonnet while routine playbooks stay on Haiku.
+
+**Why cache by check name:** The playbook for `public_s3_bucket` doesn't change based on which bucket triggered it. Resource-specific context doesn't improve the playbook — it adds cost and latency. 19 unique check types = maximum 19 API calls regardless of account size.
+
+**Cost model:** 19 checks × ~500 tokens each ≈ $0.01 per full scan with `--llm`. Noted in README. Opt-in framing means this is never a surprise.
+
+**Playbook fields — why these four:**
+- `immediate_steps` — the thing the on-call engineer does right now
+- `verification` — closes the loop; most CSPM tools skip this entirely
+- `long_term_controls` — the platform engineering angle: prevent, don't just fix
+- `blast_radius` — forces the reader to understand the stakes before deprioritizing
+
+---
+
+## Compliance Scoring
+
+**Why CIS AWS Foundations Benchmark v2:** Already partially referenced in v1. SOC 2 auditors, PCI QSAs, and enterprise procurement teams reference it. Provides a defensible scope boundary. CIS gives credibility with security buyers.
+
+**Why NIST CSF (informational, not scored):** Five-function framework (Identify/Protect/Detect/Respond/Recover) used by Wiz, Lacework, and AWS Security Hub in enterprise reporting. Shows risk management thinking beyond a checklist. Presented as informational — not scored — because checks overlap across functions, and scoring overlapping categories produces double-counting artifacts that mislead more than they inform.
+
+**Why not MITRE ATT&CK:** Threat modeling framework, not a posture benchmark. Useful for detection engineering, wrong lens for misconfiguration scanning.
+
+**Why simple scoring (not weighted):** Weighted scoring (CRITICAL failures count more) would be more accurate but harder to explain to a non-technical stakeholder. The score's job is communication, not precision. A PM decision.

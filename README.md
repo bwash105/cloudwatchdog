@@ -9,20 +9,28 @@ Open-source CSPM tool built as a PM portfolio artifact. Scans AWS environments f
 
 ## What It Detects
 
-| Check | Severity | CIS Benchmark |
-|---|---|---|
-| Public S3 buckets (ACL or policy) | 🔴 CRITICAL | CIS AWS 2.1.5 |
-| Public RDS instances | 🔴 CRITICAL | — |
-| Root account access key active | 🔴 CRITICAL | CIS AWS 1.4 |
-| Security groups open SSH/RDP to 0.0.0.0/0 | 🟠 HIGH | CIS AWS 5.2, 5.3 |
-| Root account MFA not enabled | 🟠 HIGH | CIS AWS 1.5 |
-| IAM users with console password, no MFA | 🟠 HIGH | CIS AWS 1.10 |
-| Unused IAM access keys (>90 days) | 🟠 HIGH | CIS AWS 1.12 |
-| Unencrypted EBS volumes | 🟡 MEDIUM | CIS AWS 2.2.1 |
-| IAM password policy gaps | 🟡 MEDIUM | CIS AWS 1.8–1.9 |
-| S3 default encryption not enabled | 🟡 MEDIUM | CIS AWS 2.1.1 |
-| VPC flow logs not enabled | 🟡 MEDIUM | CIS AWS 3.9 |
-| CloudTrail not enabled | 🟡 MEDIUM | CIS AWS 3.1 |
+| Check | Severity | CIS Benchmark | Security+ Domain |
+|---|---|---|---|
+| Public S3 buckets (ACL or policy) | 🔴 CRITICAL | CIS AWS 2.1.5 | A — Identity |
+| Public RDS instances | 🔴 CRITICAL | — | B — Network |
+| Root account access key active | 🔴 CRITICAL | CIS AWS 1.4 | A — Identity |
+| IAM role with wildcard trust policy | 🔴 CRITICAL | CIS AWS 1.16 | A — Identity |
+| Security group with ALL traffic open | 🔴 CRITICAL | CIS AWS 5.1 | B — Network |
+| Security groups open SSH/RDP to 0.0.0.0/0 | 🟠 HIGH | CIS AWS 5.2, 5.3 | B — Network |
+| Root account MFA not enabled | 🟠 HIGH | CIS AWS 1.5 | A — Identity |
+| IAM users with console password, no MFA | 🟠 HIGH | CIS AWS 1.10 | A — Identity |
+| Unused IAM access keys (>90 days) | 🟠 HIGH | CIS AWS 1.12 | A — Identity |
+| IAM users with direct admin policy | 🟠 HIGH | CIS AWS 1.16 | A — Identity |
+| CloudTrail log file validation disabled | 🟠 HIGH | CIS AWS 3.2 | C — IR/Forensics |
+| GuardDuty not enabled | 🟠 HIGH | — | C — IR/Forensics |
+| Unencrypted EBS volumes | 🟡 MEDIUM | CIS AWS 2.2.1 | A — Identity |
+| IAM password policy gaps | 🟡 MEDIUM | CIS AWS 1.8–1.9 | A — Identity |
+| S3 default encryption not enabled | 🟡 MEDIUM | CIS AWS 2.1.1 | A — Identity |
+| VPC flow logs not enabled | 🟡 MEDIUM | CIS AWS 3.9 | D — Compliance |
+| CloudTrail not enabled | 🟡 MEDIUM | CIS AWS 3.1 | C — IR/Forensics |
+| EC2 instances with public IP in public subnet | 🟡 MEDIUM | CIS AWS 5.6 | B — Network |
+| AWS Config not enabled | 🟡 MEDIUM | CIS AWS 3.5 | D — Compliance |
+| S3 access logging disabled | 🟡 MEDIUM | CIS AWS 2.1.4 | D — Compliance |
 
 ## Severity Framework
 
@@ -36,15 +44,14 @@ Designed as a PM product decision — not arbitrary:
 ## Usage
 
 ```bash
-pip install boto3
-python scanner.py                        # default AWS profile, us-east-1
-python scanner.py my-profile us-west-2  # named profile + region
+pip install -r requirements.txt
+python scanner.py                              # default AWS profile, us-east-1
+python scanner.py my-profile us-west-2        # named profile + region
+python scanner.py --llm                        # add LLM remediation playbooks (requires ANTHROPIC_API_KEY)
+python scanner.py my-profile us-east-1 --llm  # full options
 ```
 
-Outputs:
-- Terminal report (color-coded by severity, with remediation)
-- `cloudwatchdog-report.json` for downstream integration
-- `cloudwatchdog-report.html` dashboard (use `--html custom.html` for a custom path)
+**LLM mode cost:** ~$0.01 per full scan (19 unique check types × ~500 tokens × claude-haiku-4-5 pricing). Opt-in only.
 
 ## Sample Output
 
@@ -93,12 +100,3 @@ The detection schema is a PM artifact. Key product decisions made:
 3. **Remediation-first output**: every finding includes a concrete remediation step. Most CSPM tools show you what's wrong without telling you what to do — this is the UX gap.
 4. **JSON output**: enables integration into CI/CD, Slack alerts, ticketing systems.
 
-## Roadmap
-
-- [x] IAM password policy enforcement (CIS 1.8–1.11)
-- [x] Public RDS instance detection
-- [x] Unused IAM access keys (>90 days)
-- [x] VPC flow logs not enabled
-- [x] S3 server-side encryption not enabled
-- [ ] LLM-assisted remediation playbooks (Anthropic API)
-- [x] HTML dashboard output
